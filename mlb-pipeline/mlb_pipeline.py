@@ -23,9 +23,8 @@ Outputs written to the same folder each run:
     RBI.csv           <- every RBI prop line, with P1-P4/EV columns added
     TB.csv            <- every Total Bases prop line, with P1-P7/EV columns added
     RatingCalc.csv    <- final ranked player list (replaces the "Rating Calc" tab).
-                         Boost/Slot1-5 here are always the Boost=0 baseline -
-                         the website lets each visitor try their own Boost
-                         live, per-session, without touching this file.
+                         Boost is left as 0 for you to fill in manually - edit
+                         the CSV and re-run if you want Slot3/4/5 to reflect it.
 
 Formula notes
 -------------
@@ -158,6 +157,14 @@ def implied_prob(rows_by_label, label):
         return None
 
 
+def clamp01(x):
+    """A probability can never legitimately exceed 1.0. Some of the derived
+    formulas below (p1 = p2/0.65, p4 = 1.35*p4_direct) can push past 1.0 for
+    short-odds favorites, which would silently inflate EV/Rating for exactly
+    the players you'd most want an accurate number on. Clamp defensively."""
+    return max(0.0, min(1.0, x))
+
+
 def compute_rbi_probs(rows):
     """Port of addRbiProbabilityColumns. Columns O:S -> P1,P2,P3,P4,EV.
     Also tracks lines_direct/lines_total (out of 4) - how many of P1-P4 came
@@ -170,13 +177,13 @@ def compute_rbi_probs(rows):
     result = {}
     for player, by_label in by_player.items():
         p1_direct = implied_prob(by_label, "1+")
-        p1 = p1_direct or 0.0
+        p1 = clamp01(p1_direct or 0.0)
         p2_direct = implied_prob(by_label, "2+")
-        p2 = p2_direct or 0.0
+        p2 = clamp01(p2_direct or 0.0)
         p3_direct = implied_prob(by_label, "3+")
-        p3 = p3_direct if p3_direct is not None else 0.52 * p2
+        p3 = clamp01(p3_direct if p3_direct is not None else 0.52 * p2)
         p4_direct = implied_prob(by_label, "4+")
-        p4 = 1.35 * p4_direct if p4_direct is not None else 0.462 * p3
+        p4 = clamp01(1.35 * p4_direct if p4_direct is not None else 0.462 * p3)
         ev = p1 + p2 + p3 + p4
         lines_direct = sum(x is not None for x in (p1_direct, p2_direct, p3_direct, p4_direct))
         result[player] = {
@@ -197,18 +204,19 @@ def compute_tb_probs(rows):
     result = {}
     for player, by_label in by_player.items():
         p2_direct = implied_prob(by_label, "2+")
-        p2 = p2_direct or 0.0
-        p1 = p2 / 0.65
+        p2 = clamp01(p2_direct or 0.0)
+        p1 = clamp01(p2 / 0.65)  # dividing by <1 always increases the value - the
+                                  # clamp is what keeps this a valid probability
         p3_direct = implied_prob(by_label, "3+")
-        p3 = p3_direct or 0.0
+        p3 = clamp01(p3_direct or 0.0)
         p4_direct = implied_prob(by_label, "4+")
-        p4 = p4_direct or 0.0
+        p4 = clamp01(p4_direct or 0.0)
         p5_direct = implied_prob(by_label, "5+")
-        p5 = p5_direct if p5_direct is not None else 0.54 * p4
+        p5 = clamp01(p5_direct if p5_direct is not None else 0.54 * p4)
         p6_direct = implied_prob(by_label, "6+")
-        p6 = p6_direct if p6_direct is not None else 0.57 * p5
+        p6 = clamp01(p6_direct if p6_direct is not None else 0.57 * p5)
         p7_direct = implied_prob(by_label, "7+")
-        p7 = p7_direct if p7_direct is not None else 0.67 * p6
+        p7 = clamp01(p7_direct if p7_direct is not None else 0.67 * p6)
         ev = p1 + p2 + p3 + p4 + p5 + p6 + p7
         lines_direct = sum(x is not None for x in (p2_direct, p3_direct, p4_direct, p5_direct, p6_direct, p7_direct))
         result[player] = {
@@ -329,11 +337,6 @@ def build_rating_calc(rbi_probs, tb_probs, stats):
         else:
             exp_pa = exp_outs = exp_runs = exp_walks = exp_sb = 0.0
 
-        # Used for lineup-builder stacking (same-team grouping) - a "2TM"/"3TM"
-        # trade-aggregate code isn't a real single team, so treat it as unknown
-        # rather than accidentally grouping unrelated traded players together.
-        team = s["_team"] if s and not s["_team"][:1].isdigit() else ""
-
         rating = (
             (0.47 * tb_ev)
             + (0.74 * rbi_ev)
@@ -347,7 +350,6 @@ def build_rating_calc(rbi_probs, tb_probs, stats):
 
         rows.append({
             "Player": player,
-            "Team": team,
             "RBI_EV": round(rbi_ev, 4),
             "TB_EV": round(tb_ev, 4),
             "Rating": round(rating, 4),
@@ -368,7 +370,7 @@ def build_rating_calc(rbi_probs, tb_probs, stats):
     rows.sort(key=lambda r: r["Rating"], reverse=True)
 
     fieldnames = list(rows[0].keys()) if rows else [
-        "Player", "Team", "RBI_EV", "TB_EV", "Rating", "Confidence", "Boost",
+        "Player", "RBI_EV", "TB_EV", "Rating", "Confidence", "Boost",
         "Slot1", "Slot2", "Slot3", "Slot4", "Slot5", "Expected_PA", "Expected_Outs",
         "Expected_Runs", "Expected_Walks", "Expected_SB",
     ]
