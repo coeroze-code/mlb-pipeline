@@ -112,13 +112,21 @@ def score_combo(batters_chosen, pitchers_chosen, correlation_pct, risk_pct):
 
     rho = MAX_CORRELATION * (correlation_pct / 100.0)
 
+    # abs() here: avg_value can go negative (a bad-Rating pitcher, or a
+    # negative user Boost, can pull it below zero). Both scales below are
+    # meant to represent a MAGNITUDE - how big a bonus/penalty should be
+    # relative to the lineup's value - and multiplying by a negative
+    # avg_value would flip their sign (e.g. more risk tolerance would start
+    # INCREASING the penalty instead of decreasing it).
+    magnitude = abs(avg_value)
+
     # Stacking bonus - batters on the same team only
     team_counts = Counter(p["Team"] for p in batters_chosen)
     stack_bonus = 0.0
     for team, count in team_counts.items():
         if count >= 2:
             pairs = count * (count - 1) / 2
-            stack_bonus += rho * pairs * avg_value * STACK_BONUS_SCALE
+            stack_bonus += rho * pairs * magnitude * STACK_BONUS_SCALE
 
     sigmas = {p["Player"]: _sigma(p.get("Confidence")) for p in ordered}
     variance = sum(sigmas[p["Player"]] ** 2 for p in ordered)
@@ -131,7 +139,7 @@ def score_combo(batters_chosen, pitchers_chosen, correlation_pct, risk_pct):
                 variance += 2 * rho * sigmas[a] * sigmas[b]
     stddev = variance ** 0.5
 
-    risk_weight = RISK_PENALTY_SCALE * (1 - risk_pct / 100.0) * avg_value
+    risk_weight = RISK_PENALTY_SCALE * (1 - risk_pct / 100.0) * magnitude
     risk_penalty = risk_weight * stddev
 
     total = base_value + stack_bonus - risk_penalty
