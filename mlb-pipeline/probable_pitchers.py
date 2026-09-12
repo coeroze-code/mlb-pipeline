@@ -47,7 +47,7 @@ Folder layout: put this next to mlb_pipeline.py, e.g. C:\\daily-scraper\\MlbJson
 (MLB_-_Stats.csv is not needed by this script anymore)
 
 Output (written to the same folder):
-    ProbablePitchers_<date>.csv
+    ProbablePitchers.csv   <- overwritten every run, not date-tagged
 """
 
 import csv
@@ -62,7 +62,13 @@ FOLDER = os.path.dirname(os.path.abspath(__file__))
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 SEASON = datetime.now().year
-OUT_CSV = os.path.join(FOLDER, f"ProbablePitchers_{datetime.now().strftime('%B%d')}.csv")
+# Not date-tagged (unlike the old ProbablePitchers_<date>.csv scheme) - this
+# overwrites in place every run, same as RatingCalc.csv/CombinedResults.csv,
+# so combine_results.py always reads today's data. Old runs never pile up in
+# the repo or get picked incorrectly (see combine_results.py for why that
+# mattered - mtime after a GitHub Actions checkout doesn't reflect commit
+# history, so "find the newest dated file" could grab a stale day's data).
+OUT_CSV = os.path.join(FOLDER, "ProbablePitchers.csv")
 
 SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 PLAYER_STATS_URL = "https://statsapi.mlb.com/api/v1/people/{id}/stats"
